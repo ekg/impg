@@ -14,3 +14,4 @@ rayon = "1.9.0"
 serde = { version = "1.0.197", features = ["derive"] }
 noodles = { version = "0.66.0", features = ["bgzf"] }
 regex = "1.10.4"
+itertools = "0.13.0"

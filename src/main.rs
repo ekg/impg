@@ -1,13 +1,17 @@
 use clap::Parser;
 use std::fs::File;
+// use std::hash::Hash;
+use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter};
 use std::num::NonZeroUsize;
 use noodles::bgzf;
 use impg::impg::{Impg, SerializableImpg, AdjustedInterval, check_intervals};
-use coitrees::IntervalTree;
+use coitrees::{IntervalTree, BasicCOITree, Interval};
 use impg::paf;
 use rayon::ThreadPoolBuilder;
 use std::io::BufRead;
+
+use itertools::Itertools;
 
 /// Command-line tool for querying overlaps in PAF files.
 #[derive(Parser, Debug)]
@@ -28,6 +32,10 @@ struct Args {
     /// Path to the BED file containing target regions.
     #[clap(short='b', long, value_parser)]
     target_bed: Option<String>,
+
+    /// Window size to create PAF files from.
+    #[clap(short='w', long, value_parser)]
+    window_size: Option<i32>,    
 
     /// Enable transitive overlap requests.
     #[clap(short='x', long, action)]
@@ -102,7 +110,45 @@ fn main() -> io::Result<()> {
                 output_results_bedpe(&impg, results, &target_name, name);
             }
         }
-    }
+    } else if let Some(window_size) = args.window_size {
+        // println!("{window_size}");
+        let mut seen: HashMap<u32, Vec<Interval<()>>> = HashMap::new();
+        for key in impg.trees.keys().sorted() {
+            println!("key: {}", key);
+            impg.trees.get(key);
+            let target_length = impg.seq_index.get_len_from_id(*key).expect("Target length not found in index");
+            println!("target length: {}", target_length);
+            let target_name = impg.seq_index.get_name(*key).unwrap();
+            println!("target name: {}", target_name);
+            let mut i: i32 = 0;
+            // check if key in coitree (once per coitree is sufficient)
+            let interval_arr = if let Some(interval_arr) = seen.get_mut(key) {
+                interval_arr
+            } else { // else we insert a new empty vec
+                seen.entry(*key).or_insert(Vec::new())
+            };
+            while i < target_length.try_into().unwrap() {
+                println!("IIIII: {}", i);
+                let end;
+                if i + window_size < target_length.try_into().unwrap() {
+                    end = i + window_size;
+                } else {
+                    end = target_length.try_into().unwrap();
+                }
+                // if already in coitree, extract overlapping intervals
+                // TODO NOT SURE HERE
+                // if not in coitree, add a new key with vec
+                // TODO NOT SURE HERE
+
+                // transitive stuff
+                let results = impg.query(key.clone(), i, end);
+                // add new intervals to coitree
+                interval_arr.push(Interval::new(i, end, ()));
+                output_results_paf(&impg, results, &target_name, None);
+                i = i + window_size;
+            }
+        }
+    }   
     Ok(())
 }
 
